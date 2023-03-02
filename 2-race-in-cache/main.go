@@ -46,13 +46,12 @@ func New(load KeyStoreCacheLoader) *KeyStoreCache {
 // Get gets the key from cache, loads it from the source if needed
 func (k *KeyStoreCache) Get(key string) string {
 	k.mu.Lock()
-	defer k.mu.Unlock()
 	if e, ok := k.cache[key]; ok {
+		defer k.mu.Unlock()
 		k.pages.MoveToFront(e)
 		return e.Value.(page).Value
 	}
-	// Miss - load from database and save it in cache
-	p := page{key, k.load(key)}
+
 	// if cache is full remove the least used item
 	if len(k.cache) >= CacheSize {
 		end := k.pages.Back()
@@ -61,7 +60,20 @@ func (k *KeyStoreCache) Get(key string) string {
 		// remove from list
 		k.pages.Remove(end)
 	}
+	k.mu.Unlock()
+
+	// Miss - load from database and save it in cache
+	p := page{key, k.load(key)}
+
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
 	k.pages.PushFront(p)
+
+	if e, ok := k.cache[key]; ok {
+		k.pages.Remove(e)
+	}
+
 	k.cache[key] = k.pages.Front()
 	return p.Value
 }
